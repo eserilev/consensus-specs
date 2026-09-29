@@ -125,13 +125,18 @@ def compute_slot_at_time_ms(genesis_time_ms: Uint64, time_ms: Uint64) -> Slot:
     Return the slot at Unix time ``time_ms``.
     """
     # [Modified in EIP8198]
-    for entry in reversed(SLOT_DURATION_SCHEDULE):
-        entry_slot = compute_start_slot_at_epoch(entry["EPOCH"])
-        entry_time_ms = compute_time_at_slot_ms(genesis_time_ms, entry_slot)
-        if time_ms >= entry_time_ms:
+    entry_slot = compute_start_slot_at_epoch(SLOT_DURATION_SCHEDULE[0]["EPOCH"])
+    entry_time_ms = genesis_time_ms
+    slot_duration_ms = SLOT_DURATION_SCHEDULE[0]["SLOT_DURATION_MS"]
+    for entry in SLOT_DURATION_SCHEDULE[1:]:
+        next_slot = compute_start_slot_at_epoch(entry["EPOCH"])
+        next_time_ms = entry_time_ms + (next_slot - entry_slot) * slot_duration_ms
+        if time_ms < next_time_ms:
             break
-    time_diff_ms = time_ms - entry_time_ms
-    slots = time_diff_ms // entry["SLOT_DURATION_MS"]
+        entry_slot = next_slot
+        entry_time_ms = next_time_ms
+        slot_duration_ms = entry["SLOT_DURATION_MS"]
+    slots = (time_ms - entry_time_ms) // slot_duration_ms
     return entry_slot + slots
 ```
 
