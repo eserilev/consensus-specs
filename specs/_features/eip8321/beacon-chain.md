@@ -433,10 +433,6 @@ def process_operations(
 ) -> None:
     assert len(body.deposits) == 0
 
-    def for_ops(operations: Sequence[Any], fn: Callable[..., None], *args: Any) -> None:
-        for operation in operations:
-            fn(state, operation, *args)
-
     assert len(body.proposer_slashings) <= MAX_PROPOSER_SLASHINGS
     assert len(body.attester_slashings) <= MAX_ATTESTER_SLASHINGS_ELECTRA
     assert len(body.attestations) <= MAX_ATTESTATIONS_ELECTRA
@@ -446,14 +442,21 @@ def process_operations(
     # [New in EIP8321]
     assert len(body.randao_commitment_registrations) <= MAX_RANDAO_COMMITMENT_REGISTRATIONS
 
-    for_ops(body.proposer_slashings, process_proposer_slashing)
-    for_ops(body.attester_slashings, process_attester_slashing)
-    for_ops(body.attestations, process_attestation, parent_slot)
-    for_ops(body.voluntary_exits, process_voluntary_exit)
-    for_ops(body.bls_to_execution_changes, process_bls_to_execution_change)
-    for_ops(body.payload_attestations, process_payload_attestation)
+    for proposer_slashing in body.proposer_slashings:
+        process_proposer_slashing(state, proposer_slashing)
+    for attester_slashing in body.attester_slashings:
+        process_attester_slashing(state, attester_slashing)
+    for attestation in body.attestations:
+        process_attestation(state, attestation, parent_slot)
+    for voluntary_exit in body.voluntary_exits:
+        process_voluntary_exit(state, voluntary_exit)
+    for bls_to_execution_change in body.bls_to_execution_changes:
+        process_bls_to_execution_change(state, bls_to_execution_change)
+    for payload_attestation in body.payload_attestations:
+        process_payload_attestation(state, payload_attestation)
     # [New in EIP8321]
-    for_ops(body.randao_commitment_registrations, process_randao_commitment_registration)
+    for randao_commitment_registration in body.randao_commitment_registrations:
+        process_randao_commitment_registration(state, randao_commitment_registration)
 ```
 
 ##### RANDAO commitment registrations

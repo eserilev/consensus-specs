@@ -1526,8 +1526,9 @@ def initiate_builder_exit(state: BeaconState, builder_index: BuilderIndex) -> No
     Initiate the exit of the builder with index ``index``.
     """
     # Set builder exit epoch
-    builder = state.builders[builder_index]
-    builder.withdrawable_epoch = get_current_epoch(state) + MIN_BUILDER_WITHDRAWABILITY_DELAY
+    state.builders[builder_index].withdrawable_epoch = (
+        get_current_epoch(state) + MIN_BUILDER_WITHDRAWABILITY_DELAY
+    )
 ```
 
 #### New `settle_builder_payment`
@@ -1756,15 +1757,16 @@ def apply_parent_execution_payload(
 
     # Process execution requests from parent's payload. The execution
     # requests are processed at state.slot (child's slot), not the parent's slot.
-    def for_ops(operations: Sequence[Any], fn: Callable[[BeaconState, Any], None]) -> None:
-        for operation in operations:
-            fn(state, operation)
-
-    for_ops(requests.deposits, process_deposit_request)
-    for_ops(requests.withdrawals, process_withdrawal_request)
-    for_ops(requests.consolidations, process_consolidation_request)
-    for_ops(requests.builder_deposits, process_builder_deposit_request)
-    for_ops(requests.builder_exits, process_builder_exit_request)
+    for deposit_request in requests.deposits:
+        process_deposit_request(state, deposit_request)
+    for withdrawal_request in requests.withdrawals:
+        process_withdrawal_request(state, withdrawal_request)
+    for consolidation_request in requests.consolidations:
+        process_consolidation_request(state, consolidation_request)
+    for builder_deposit_request in requests.builder_deposits:
+        process_builder_deposit_request(state, builder_deposit_request)
+    for builder_exit_request in requests.builder_exits:
+        process_builder_exit_request(state, builder_exit_request)
 
     # Settle the builder payment
     if parent_epoch == get_current_epoch(state):
@@ -2174,11 +2176,6 @@ def process_operations(
 ) -> None:
     assert len(body.deposits) == 0
 
-    # [Modified in Gloas:EIP7732]
-    def for_ops(operations: Sequence[Any], fn: Callable[..., None], *args: Any) -> None:
-        for operation in operations:
-            fn(state, operation, *args)
-
     # [New in Gloas:EIP7688]
     assert len(body.proposer_slashings) <= MAX_PROPOSER_SLASHINGS
     assert len(body.attester_slashings) <= MAX_ATTESTER_SLASHINGS_ELECTRA
@@ -2188,12 +2185,17 @@ def process_operations(
     assert len(body.payload_attestations) <= MAX_PAYLOAD_ATTESTATIONS
 
     # [Modified in Gloas:EIP7732]
-    for_ops(body.proposer_slashings, process_proposer_slashing)
-    for_ops(body.attester_slashings, process_attester_slashing)
+    for proposer_slashing in body.proposer_slashings:
+        process_proposer_slashing(state, proposer_slashing)
+    for attester_slashing in body.attester_slashings:
+        process_attester_slashing(state, attester_slashing)
     # [Modified in Gloas:EIP7732]
-    for_ops(body.attestations, process_attestation, parent_slot)
-    for_ops(body.voluntary_exits, process_voluntary_exit)
-    for_ops(body.bls_to_execution_changes, process_bls_to_execution_change)
+    for attestation in body.attestations:
+        process_attestation(state, attestation, parent_slot)
+    for voluntary_exit in body.voluntary_exits:
+        process_voluntary_exit(state, voluntary_exit)
+    for bls_to_execution_change in body.bls_to_execution_changes:
+        process_bls_to_execution_change(state, bls_to_execution_change)
     # [Modified in Gloas:EIP7732]
     # Removed `process_deposit_request`
     # [Modified in Gloas:EIP7732]
@@ -2201,7 +2203,8 @@ def process_operations(
     # [Modified in Gloas:EIP7732]
     # Removed `process_consolidation_request`
     # [New in Gloas:EIP7732]
-    for_ops(body.payload_attestations, process_payload_attestation)
+    for payload_attestation in body.payload_attestations:
+        process_payload_attestation(state, payload_attestation)
 ```
 
 ##### Builder deposit requests
@@ -2295,10 +2298,12 @@ def process_builder_deposit_request(state: BeaconState, request: BuilderDepositR
         # If exited and swept, reset the withdrawable epoch
         if builder.withdrawable_epoch != FAR_FUTURE_EPOCH and builder.balance == 0:
             epoch = get_current_epoch(state)
-            builder.withdrawable_epoch = epoch + MIN_BUILDER_WITHDRAWABILITY_DELAY
+            state.builders[builder_index].withdrawable_epoch = (
+                epoch + MIN_BUILDER_WITHDRAWABILITY_DELAY
+            )
 
         # Increase balance by deposit amount
-        builder.balance += request.amount
+        state.builders[builder_index].balance += request.amount
 ```
 
 ##### Builder exit requests
@@ -2375,24 +2380,23 @@ def process_attestation(
     # [Modified in Gloas:EIP7732]
     if data.target.epoch == get_current_epoch(state):
         current_epoch_target = True
-        epoch_participation = state.current_epoch_participation
-        payment = state.builder_pending_payments[SLOTS_PER_EPOCH + data.slot % SLOTS_PER_EPOCH]
+        payment_index = SLOTS_PER_EPOCH + data.slot % SLOTS_PER_EPOCH
     else:
         current_epoch_target = False
-        epoch_participation = state.previous_epoch_participation
-        payment = state.builder_pending_payments[data.slot % SLOTS_PER_EPOCH]
+        payment_index = data.slot % SLOTS_PER_EPOCH
+    payment = state.builder_pending_payments[payment_index]
 
     proposer_reward_numerator = 0
     for index in get_attesting_indices(state, attestation):
+        participation = get_epoch_participation_flags(state, current_epoch_target, index)
         # [New in Gloas:EIP7732]
-        had_no_participation = epoch_participation[index] == 0b0000_0000
+        had_no_participation = participation == 0b0000_0000
         will_set_new_flag = False
 
         for flag_index, weight in enumerate(PARTICIPATION_FLAG_WEIGHTS):
-            if flag_index in participation_flag_indices and not has_flag(
-                epoch_participation[index], flag_index
-            ):
-                epoch_participation[index] = add_flag(epoch_participation[index], flag_index)
+            if flag_index in participation_flag_indices and not has_flag(participation, flag_index):
+                participation = add_flag(participation, flag_index)
+                set_epoch_participation_flags(state, current_epoch_target, index, participation)
                 proposer_reward_numerator += get_base_reward(state, index) * weight
                 # [New in Gloas:EIP7732]
                 will_set_new_flag = True
@@ -2404,7 +2408,8 @@ def process_attestation(
             and is_attestation_same_slot(state, data)
             and payment.withdrawal.amount > 0
         ):
-            payment.weight += state.validators[index].effective_balance
+            effective_balance = state.validators[index].effective_balance
+            state.builder_pending_payments[payment_index].weight += effective_balance
 
     # Reward proposer
     proposer_reward_denominator = (

@@ -164,6 +164,7 @@ lint: sync
 	@uv run python $(CURDIR)/scripts/check_fork_comments.py
 	@uv run python $(CURDIR)/scripts/check_markdown_headings.py
 	@uv run python $(CURDIR)/scripts/check_value_annotations.py
+	@uv run python $(CURDIR)/scripts/check_safe_python.py
 	@uv run mdformat --number --wrap=80 $(MARKDOWN_FILES)
 	@uv run ruff check --fix --quiet $(CURDIR)/tests $(CURDIR)/pysetup $(CURDIR)/specs
 	@uv run ruff format --quiet $(CURDIR)/tests $(CURDIR)/pysetup

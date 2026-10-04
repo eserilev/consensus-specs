@@ -476,18 +476,15 @@ def process_attestation(state: BeaconState, attestation: Attestation) -> None:
     assert is_valid_indexed_attestation(state, get_indexed_attestation(state, attestation))
 
     # Update epoch participation flags
-    if data.target.epoch == get_current_epoch(state):
-        epoch_participation = state.current_epoch_participation
-    else:
-        epoch_participation = state.previous_epoch_participation
+    is_current_epoch = data.target.epoch == get_current_epoch(state)
 
     proposer_reward_numerator = 0
     for index in get_attesting_indices(state, attestation):
+        participation = get_epoch_participation_flags(state, is_current_epoch, index)
         for flag_index, weight in enumerate(PARTICIPATION_FLAG_WEIGHTS):
-            if flag_index in participation_flag_indices and not has_flag(
-                epoch_participation[index], flag_index
-            ):
-                epoch_participation[index] = add_flag(epoch_participation[index], flag_index)
+            if flag_index in participation_flag_indices and not has_flag(participation, flag_index):
+                participation = add_flag(participation, flag_index)
+                set_epoch_participation_flags(state, is_current_epoch, index, participation)
                 proposer_reward_numerator += get_base_reward(state, index) * weight
 
     # Reward proposer
@@ -605,7 +602,7 @@ def process_registry_updates(state: BeaconState) -> None:
     # Process activation eligibility and ejections
     for index, validator in enumerate(state.validators):
         if is_eligible_for_activation_queue(validator):
-            validator.activation_eligibility_epoch = get_current_epoch(state) + 1
+            state.validators[index].activation_eligibility_epoch = get_current_epoch(state) + 1
 
         if (
             is_active_validator(validator, get_current_epoch(state))
@@ -626,6 +623,7 @@ def process_registry_updates(state: BeaconState) -> None:
     # Dequeued validators for activation up to activation churn limit
     # [Modified in Deneb:EIP7514]
     for index in activation_queue[: get_validator_activation_churn_limit(state)]:
-        validator = state.validators[index]
-        validator.activation_epoch = compute_activation_exit_epoch(get_current_epoch(state))
+        state.validators[index].activation_epoch = compute_activation_exit_epoch(
+            get_current_epoch(state)
+        )
 ```

@@ -317,7 +317,7 @@ def add_validator_to_registry(
 ```python
 def switch_to_compounding_validator(state: BeaconState, index: ValidatorIndex) -> None:
     validator = state.validators[index]
-    validator.withdrawal_credentials = Bytes32(
+    state.validators[index].withdrawal_credentials = Bytes32(
         COMPOUNDING_WITHDRAWAL_PREFIX + validator.withdrawal_credentials[1:]
     )
     queue_excess_active_balance(state, index)
@@ -351,7 +351,7 @@ def process_effective_balance_updates(state: BeaconState) -> None:
             or validator.effective_balance + UPWARD_THRESHOLD < balance
         ):
             # [Modified in EIP8148]
-            validator.effective_balance = min(
+            state.validators[index].effective_balance = min(
                 balance - balance % EFFECTIVE_BALANCE_INCREMENT, effective_sweep_threshold
             )
 ```
@@ -510,17 +510,19 @@ def apply_parent_execution_payload(
 
     # Process execution requests from parent's payload. The execution
     # requests are processed at state.slot (child's slot), not the parent's slot.
-    def for_ops(operations: Sequence[Any], fn: Callable[[BeaconState, Any], None]) -> None:
-        for operation in operations:
-            fn(state, operation)
-
-    for_ops(requests.deposits, process_deposit_request)
-    for_ops(requests.withdrawals, process_withdrawal_request)
-    for_ops(requests.consolidations, process_consolidation_request)
-    for_ops(requests.builder_deposits, process_builder_deposit_request)
-    for_ops(requests.builder_exits, process_builder_exit_request)
+    for deposit_request in requests.deposits:
+        process_deposit_request(state, deposit_request)
+    for withdrawal_request in requests.withdrawals:
+        process_withdrawal_request(state, withdrawal_request)
+    for consolidation_request in requests.consolidations:
+        process_consolidation_request(state, consolidation_request)
+    for builder_deposit_request in requests.builder_deposits:
+        process_builder_deposit_request(state, builder_deposit_request)
+    for builder_exit_request in requests.builder_exits:
+        process_builder_exit_request(state, builder_exit_request)
     # [New in EIP8148]
-    for_ops(requests.sweep_thresholds, process_set_sweep_threshold_request)
+    for set_sweep_threshold_request in requests.sweep_thresholds:
+        process_set_sweep_threshold_request(state, set_sweep_threshold_request)
 
     # Settle the builder payment
     if parent_epoch == get_current_epoch(state):

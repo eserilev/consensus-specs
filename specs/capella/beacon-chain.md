@@ -600,17 +600,19 @@ def process_operations(state: BeaconState, body: BeaconBlockBody) -> None:
         MAX_DEPOSITS, state.eth1_data.deposit_count - state.eth1_deposit_index
     )
 
-    def for_ops(operations: Sequence[Any], fn: Callable[[BeaconState, Any], None]) -> None:
-        for operation in operations:
-            fn(state, operation)
-
-    for_ops(body.proposer_slashings, process_proposer_slashing)
-    for_ops(body.attester_slashings, process_attester_slashing)
-    for_ops(body.attestations, process_attestation)
-    for_ops(body.deposits, process_deposit)
-    for_ops(body.voluntary_exits, process_voluntary_exit)
+    for proposer_slashing in body.proposer_slashings:
+        process_proposer_slashing(state, proposer_slashing)
+    for attester_slashing in body.attester_slashings:
+        process_attester_slashing(state, attester_slashing)
+    for attestation in body.attestations:
+        process_attestation(state, attestation)
+    for deposit in body.deposits:
+        process_deposit(state, deposit)
+    for voluntary_exit in body.voluntary_exits:
+        process_voluntary_exit(state, voluntary_exit)
     # [New in Capella]
-    for_ops(body.bls_to_execution_changes, process_bls_to_execution_change)
+    for bls_to_execution_change in body.bls_to_execution_changes:
+        process_bls_to_execution_change(state, bls_to_execution_change)
 ```
 
 #### New `process_bls_to_execution_change`
@@ -635,7 +637,7 @@ def process_bls_to_execution_change(
     signing_root = compute_signing_root(address_change, domain)
     assert bls.Verify(address_change.from_bls_pubkey, signing_root, signed_address_change.signature)
 
-    validator.withdrawal_credentials = Bytes32(
+    state.validators[address_change.validator_index].withdrawal_credentials = Bytes32(
         ETH1_ADDRESS_WITHDRAWAL_PREFIX + b"\x00" * 11 + address_change.to_execution_address
     )
 ```
