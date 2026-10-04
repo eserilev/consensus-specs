@@ -38,13 +38,11 @@
     - [`get_next_sync_committee`](#get_next_sync_committee)
     - [`get_base_reward_per_increment`](#get_base_reward_per_increment)
     - [`get_base_reward`](#get_base_reward)
-    - [`get_epoch_participation_flags`](#get_epoch_participation_flags)
     - [`get_unslashed_participating_indices`](#get_unslashed_participating_indices)
     - [`get_attestation_participation_flag_indices`](#get_attestation_participation_flag_indices)
     - [`get_flag_index_deltas`](#get_flag_index_deltas)
     - [Modified `get_inactivity_penalty_deltas`](#modified-get_inactivity_penalty_deltas)
   - [Beacon state mutators](#beacon-state-mutators)
-    - [`set_epoch_participation_flags`](#set_epoch_participation_flags)
     - [Modified `slash_validator`](#modified-slash_validator)
   - [Block processing](#block-processing)
     - [Modified `process_attestation`](#modified-process_attestation)
@@ -393,21 +391,6 @@ def get_base_reward(state: BeaconState, index: ValidatorIndex) -> Gwei:
     return increments * get_base_reward_per_increment(state)
 ```
 
-#### `get_epoch_participation_flags`
-
-```python
-def get_epoch_participation_flags(
-    state: BeaconState, is_current_epoch: bool, index: ValidatorIndex
-) -> ParticipationFlags:
-    """
-    Return the participation flags of the validator at ``index`` in the current or previous epoch.
-    """
-    if is_current_epoch:
-        return state.current_epoch_participation[index]
-    else:
-        return state.previous_epoch_participation[index]
-```
-
 #### `get_unslashed_participating_indices`
 
 ```python
@@ -525,21 +508,6 @@ def get_inactivity_penalty_deltas(state: BeaconState) -> tuple[Sequence[Gwei], S
 
 ### Beacon state mutators
 
-#### `set_epoch_participation_flags`
-
-```python
-def set_epoch_participation_flags(
-    state: BeaconState, is_current_epoch: bool, index: ValidatorIndex, flags: ParticipationFlags
-) -> None:
-    """
-    Set the participation flags of the validator at ``index`` in the current or previous epoch.
-    """
-    if is_current_epoch:
-        state.current_epoch_participation[index] = flags
-    else:
-        state.previous_epoch_participation[index] = flags
-```
-
 #### Modified `slash_validator`
 
 *Note*: The function `slash_validator` is modified to use
@@ -558,8 +526,8 @@ def slash_validator(
     epoch = get_current_epoch(state)
     initiate_validator_exit(state, slashed_index)
     validator = state.validators[slashed_index]
-    state.validators[slashed_index].slashed = Boolean(True)
-    state.validators[slashed_index].withdrawable_epoch = max(
+    validator.slashed = Boolean(True)
+    validator.withdrawable_epoch = max(
         validator.withdrawable_epoch, epoch + EPOCHS_PER_SLASHINGS_VECTOR
     )
     state.slashings[epoch % EPOCHS_PER_SLASHINGS_VECTOR] += validator.effective_balance
@@ -615,15 +583,18 @@ def process_attestation(state: BeaconState, attestation: Attestation) -> None:
     assert is_valid_indexed_attestation(state, get_indexed_attestation(state, attestation))
 
     # Update epoch participation flags
-    is_current_epoch = data.target.epoch == get_current_epoch(state)
+    if data.target.epoch == get_current_epoch(state):
+        epoch_participation = state.current_epoch_participation
+    else:
+        epoch_participation = state.previous_epoch_participation
 
     proposer_reward_numerator = 0
     for index in get_attesting_indices(state, attestation):
-        participation = get_epoch_participation_flags(state, is_current_epoch, index)
         for flag_index, weight in enumerate(PARTICIPATION_FLAG_WEIGHTS):
-            if flag_index in participation_flag_indices and not has_flag(participation, flag_index):
-                participation = add_flag(participation, flag_index)
-                set_epoch_participation_flags(state, is_current_epoch, index, participation)
+            if flag_index in participation_flag_indices and not has_flag(
+                epoch_participation[index], flag_index
+            ):
+                epoch_participation[index] = add_flag(epoch_participation[index], flag_index)
                 proposer_reward_numerator += get_base_reward(state, index) * weight
 
     # Reward proposer

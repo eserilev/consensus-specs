@@ -60,15 +60,14 @@ def translate_participation(
         )
 
         # Apply flags to all attesting validators
+        epoch_participation = state.previous_epoch_participation
         committee = get_beacon_committee(state, data.slot, data.index)
         attesting_indices = {
             index for i, index in enumerate(committee) if attestation.aggregation_bits[i]
         }
         for index in attesting_indices:
             for flag_index in participation_flag_indices:
-                state.previous_epoch_participation[index] = add_flag(
-                    state.previous_epoch_participation[index], flag_index
-                )
+                epoch_participation[index] = add_flag(epoch_participation[index], flag_index)
 
 
 def upgrade_to_altair(pre: phase0.BeaconState) -> BeaconState:

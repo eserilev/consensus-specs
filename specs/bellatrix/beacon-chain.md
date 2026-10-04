@@ -329,8 +329,8 @@ def slash_validator(
     epoch = get_current_epoch(state)
     initiate_validator_exit(state, slashed_index)
     validator = state.validators[slashed_index]
-    state.validators[slashed_index].slashed = Boolean(True)
-    state.validators[slashed_index].withdrawable_epoch = max(
+    validator.slashed = Boolean(True)
+    validator.withdrawable_epoch = max(
         validator.withdrawable_epoch, epoch + EPOCHS_PER_SLASHINGS_VECTOR
     )
     state.slashings[epoch % EPOCHS_PER_SLASHINGS_VECTOR] += validator.effective_balance

@@ -486,19 +486,17 @@ def apply_parent_execution_payload(
 
     # Process execution requests from parent's payload. The execution
     # requests are processed at state.slot (child's slot), not the parent's slot.
-    for deposit_request in requests.deposits:
-        process_deposit_request(state, deposit_request)
-    for withdrawal_request in requests.withdrawals:
-        process_withdrawal_request(state, withdrawal_request)
-    for consolidation_request in requests.consolidations:
-        process_consolidation_request(state, consolidation_request)
-    for builder_deposit_request in requests.builder_deposits:
-        process_builder_deposit_request(state, builder_deposit_request)
-    for builder_exit_request in requests.builder_exits:
-        process_builder_exit_request(state, builder_exit_request)
+    def for_ops(operations: Sequence[Any], fn: Callable[[BeaconState, Any], None]) -> None:
+        for operation in operations:
+            fn(state, operation)
+
+    for_ops(requests.deposits, process_deposit_request)
+    for_ops(requests.withdrawals, process_withdrawal_request)
+    for_ops(requests.consolidations, process_consolidation_request)
+    for_ops(requests.builder_deposits, process_builder_deposit_request)
+    for_ops(requests.builder_exits, process_builder_exit_request)
     # [New in EIP8205]
-    for preregistration_request in requests.preregistrations:
-        process_preregistration_request(state, preregistration_request)
+    for_ops(requests.preregistrations, process_preregistration_request)
 
     # Settle the builder payment
     if parent_epoch == get_current_epoch(state):

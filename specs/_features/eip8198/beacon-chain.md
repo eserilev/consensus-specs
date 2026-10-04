@@ -367,22 +367,23 @@ def process_attestation(
 
     if data.target.epoch == get_current_epoch(state):
         current_epoch_target = True
-        payment_index = SLOTS_PER_EPOCH + data.slot % SLOTS_PER_EPOCH
+        epoch_participation = state.current_epoch_participation
+        payment = state.builder_pending_payments[SLOTS_PER_EPOCH + data.slot % SLOTS_PER_EPOCH]
     else:
         current_epoch_target = False
-        payment_index = data.slot % SLOTS_PER_EPOCH
-    payment = state.builder_pending_payments[payment_index]
+        epoch_participation = state.previous_epoch_participation
+        payment = state.builder_pending_payments[data.slot % SLOTS_PER_EPOCH]
 
     proposer_reward_numerator = 0
     for index in get_attesting_indices(state, attestation):
-        participation = get_epoch_participation_flags(state, current_epoch_target, index)
-        had_no_participation = participation == 0b0000_0000
+        had_no_participation = epoch_participation[index] == 0b0000_0000
         will_set_new_flag = False
 
         for flag_index, weight in enumerate(PARTICIPATION_FLAG_WEIGHTS):
-            if flag_index in participation_flag_indices and not has_flag(participation, flag_index):
-                participation = add_flag(participation, flag_index)
-                set_epoch_participation_flags(state, current_epoch_target, index, participation)
+            if flag_index in participation_flag_indices and not has_flag(
+                epoch_participation[index], flag_index
+            ):
+                epoch_participation[index] = add_flag(epoch_participation[index], flag_index)
                 # [Modified in EIP8198]
                 proposer_reward_numerator += (
                     get_base_reward(state, index, data.target.epoch) * weight
@@ -395,8 +396,7 @@ def process_attestation(
             and is_attestation_same_slot(state, data)
             and payment.withdrawal.amount > 0
         ):
-            effective_balance = state.validators[index].effective_balance
-            state.builder_pending_payments[payment_index].weight += effective_balance
+            payment.weight += state.validators[index].effective_balance
 
     # Reward proposer
     proposer_reward_denominator = (

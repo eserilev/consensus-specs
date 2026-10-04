@@ -1677,10 +1677,8 @@ def initiate_validator_exit(state: BeaconState, index: ValidatorIndex) -> None:
         exit_queue_epoch += 1
 
     # Set validator exit epoch and withdrawable epoch
-    state.validators[index].exit_epoch = exit_queue_epoch
-    state.validators[index].withdrawable_epoch = (
-        exit_queue_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY
-    )
+    validator.exit_epoch = exit_queue_epoch
+    validator.withdrawable_epoch = validator.exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY
 ```
 
 #### `slash_validator`
@@ -1697,8 +1695,8 @@ def slash_validator(
     epoch = get_current_epoch(state)
     initiate_validator_exit(state, slashed_index)
     validator = state.validators[slashed_index]
-    state.validators[slashed_index].slashed = Boolean(True)
-    state.validators[slashed_index].withdrawable_epoch = max(
+    validator.slashed = Boolean(True)
+    validator.withdrawable_epoch = max(
         validator.withdrawable_epoch, epoch + EPOCHS_PER_SLASHINGS_VECTOR
     )
     state.slashings[epoch % EPOCHS_PER_SLASHINGS_VECTOR] += validator.effective_balance
@@ -1760,15 +1758,14 @@ def initialize_beacon_state_from_eth1(
         process_deposit(state, deposit)
 
     # Process activations
-    for index in range(len(state.validators)):
+    for index, validator in enumerate(state.validators):
         balance = state.balances[index]
-        effective_balance = min(
+        validator.effective_balance = min(
             balance - balance % EFFECTIVE_BALANCE_INCREMENT, MAX_EFFECTIVE_BALANCE
         )
-        state.validators[index].effective_balance = effective_balance
-        if effective_balance == MAX_EFFECTIVE_BALANCE:
-            state.validators[index].activation_eligibility_epoch = GENESIS_EPOCH
-            state.validators[index].activation_epoch = GENESIS_EPOCH
+        if validator.effective_balance == MAX_EFFECTIVE_BALANCE:
+            validator.activation_eligibility_epoch = GENESIS_EPOCH
+            validator.activation_epoch = GENESIS_EPOCH
 
     # Set genesis validators root for domain separation and chain versioning
     state.genesis_validators_root = hash_tree_root(state.validators)
@@ -2196,7 +2193,7 @@ def process_registry_updates(state: BeaconState) -> None:
     # Process activation eligibility and ejections
     for index, validator in enumerate(state.validators):
         if is_eligible_for_activation_queue(validator):
-            state.validators[index].activation_eligibility_epoch = get_current_epoch(state) + 1
+            validator.activation_eligibility_epoch = get_current_epoch(state) + 1
 
         if (
             is_active_validator(validator, get_current_epoch(state))
@@ -2216,9 +2213,8 @@ def process_registry_updates(state: BeaconState) -> None:
     )
     # Dequeued validators for activation up to churn limit
     for index in activation_queue[: get_validator_churn_limit(state)]:
-        state.validators[index].activation_epoch = compute_activation_exit_epoch(
-            get_current_epoch(state)
-        )
+        validator = state.validators[index]
+        validator.activation_epoch = compute_activation_exit_epoch(get_current_epoch(state))
 ```
 
 #### Slashings
@@ -2267,7 +2263,7 @@ def process_effective_balance_updates(state: BeaconState) -> None:
             balance + DOWNWARD_THRESHOLD < validator.effective_balance
             or validator.effective_balance + UPWARD_THRESHOLD < balance
         ):
-            state.validators[index].effective_balance = min(
+            validator.effective_balance = min(
                 balance - balance % EFFECTIVE_BALANCE_INCREMENT, MAX_EFFECTIVE_BALANCE
             )
 ```
@@ -2386,16 +2382,15 @@ def process_operations(state: BeaconState, body: BeaconBlockBody) -> None:
         MAX_DEPOSITS, state.eth1_data.deposit_count - state.eth1_deposit_index
     )
 
-    for proposer_slashing in body.proposer_slashings:
-        process_proposer_slashing(state, proposer_slashing)
-    for attester_slashing in body.attester_slashings:
-        process_attester_slashing(state, attester_slashing)
-    for attestation in body.attestations:
-        process_attestation(state, attestation)
-    for deposit in body.deposits:
-        process_deposit(state, deposit)
-    for voluntary_exit in body.voluntary_exits:
-        process_voluntary_exit(state, voluntary_exit)
+    def for_ops(operations: Sequence[Any], fn: Callable[[BeaconState, Any], None]) -> None:
+        for operation in operations:
+            fn(state, operation)
+
+    for_ops(body.proposer_slashings, process_proposer_slashing)
+    for_ops(body.attester_slashings, process_attester_slashing)
+    for_ops(body.attestations, process_attestation)
+    for_ops(body.deposits, process_deposit)
+    for_ops(body.voluntary_exits, process_voluntary_exit)
 ```
 
 ##### Proposer slashings

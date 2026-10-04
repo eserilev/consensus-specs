@@ -877,10 +877,8 @@ def initiate_validator_exit(state: BeaconState, index: ValidatorIndex) -> None:
     exit_queue_epoch = compute_exit_epoch_and_update_churn(state, validator.effective_balance)
 
     # Set validator exit epoch and withdrawable epoch
-    state.validators[index].exit_epoch = exit_queue_epoch
-    state.validators[index].withdrawable_epoch = (
-        exit_queue_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY
-    )
+    validator.exit_epoch = exit_queue_epoch
+    validator.withdrawable_epoch = validator.exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY
 ```
 
 #### New `switch_to_compounding_validator`
@@ -888,7 +886,7 @@ def initiate_validator_exit(state: BeaconState, index: ValidatorIndex) -> None:
 ```python
 def switch_to_compounding_validator(state: BeaconState, index: ValidatorIndex) -> None:
     validator = state.validators[index]
-    state.validators[index].withdrawal_credentials = Bytes32(
+    validator.withdrawal_credentials = Bytes32(
         COMPOUNDING_WITHDRAWAL_PREFIX + validator.withdrawal_credentials[1:]
     )
     queue_excess_active_balance(state, index)
@@ -994,8 +992,8 @@ def slash_validator(
     epoch = get_current_epoch(state)
     initiate_validator_exit(state, slashed_index)
     validator = state.validators[slashed_index]
-    state.validators[slashed_index].slashed = Boolean(True)
-    state.validators[slashed_index].withdrawable_epoch = max(
+    validator.slashed = Boolean(True)
+    validator.withdrawable_epoch = max(
         validator.withdrawable_epoch, epoch + EPOCHS_PER_SLASHINGS_VECTOR
     )
     state.slashings[epoch % EPOCHS_PER_SLASHINGS_VECTOR] += validator.effective_balance
@@ -1064,7 +1062,7 @@ def process_registry_updates(state: BeaconState) -> None:
     for index, validator in enumerate(state.validators):
         # [Modified in Electra:EIP7251]
         if is_eligible_for_activation_queue(validator):
-            state.validators[index].activation_eligibility_epoch = current_epoch + 1
+            validator.activation_eligibility_epoch = current_epoch + 1
         elif (
             is_active_validator(validator, current_epoch)
             and validator.effective_balance <= EJECTION_BALANCE
@@ -1072,7 +1070,7 @@ def process_registry_updates(state: BeaconState) -> None:
             # [Modified in Electra:EIP7251]
             initiate_validator_exit(state, ValidatorIndex(index))
         elif is_eligible_for_activation(state, validator):
-            state.validators[index].activation_epoch = activation_epoch
+            validator.activation_epoch = activation_epoch
 ```
 
 #### Modified `process_slashings`
@@ -1251,7 +1249,7 @@ def process_effective_balance_updates(state: BeaconState) -> None:
             balance + DOWNWARD_THRESHOLD < validator.effective_balance
             or validator.effective_balance + UPWARD_THRESHOLD < balance
         ):
-            state.validators[index].effective_balance = min(
+            validator.effective_balance = min(
                 balance - balance % EFFECTIVE_BALANCE_INCREMENT, max_effective_balance
             )
 ```
@@ -1616,29 +1614,24 @@ def process_operations(state: BeaconState, body: BeaconBlockBody) -> None:
     else:
         assert len(body.deposits) == 0
 
-    for proposer_slashing in body.proposer_slashings:
-        process_proposer_slashing(state, proposer_slashing)
-    for attester_slashing in body.attester_slashings:
-        process_attester_slashing(state, attester_slashing)
+    def for_ops(operations: Sequence[Any], fn: Callable[[BeaconState, Any], None]) -> None:
+        for operation in operations:
+            fn(state, operation)
+
+    for_ops(body.proposer_slashings, process_proposer_slashing)
+    for_ops(body.attester_slashings, process_attester_slashing)
     # [Modified in Electra:EIP7549]
-    for attestation in body.attestations:
-        process_attestation(state, attestation)
-    for deposit in body.deposits:
-        process_deposit(state, deposit)
+    for_ops(body.attestations, process_attestation)
+    for_ops(body.deposits, process_deposit)
     # [Modified in Electra:EIP7251]
-    for voluntary_exit in body.voluntary_exits:
-        process_voluntary_exit(state, voluntary_exit)
-    for bls_to_execution_change in body.bls_to_execution_changes:
-        process_bls_to_execution_change(state, bls_to_execution_change)
+    for_ops(body.voluntary_exits, process_voluntary_exit)
+    for_ops(body.bls_to_execution_changes, process_bls_to_execution_change)
     # [New in Electra:EIP6110]
-    for deposit_request in body.execution_requests.deposits:
-        process_deposit_request(state, deposit_request)
+    for_ops(body.execution_requests.deposits, process_deposit_request)
     # [New in Electra:EIP7002:EIP7251]
-    for withdrawal_request in body.execution_requests.withdrawals:
-        process_withdrawal_request(state, withdrawal_request)
+    for_ops(body.execution_requests.withdrawals, process_withdrawal_request)
     # [New in Electra:EIP7251]
-    for consolidation_request in body.execution_requests.consolidations:
-        process_consolidation_request(state, consolidation_request)
+    for_ops(body.execution_requests.consolidations, process_consolidation_request)
 ```
 
 ##### Attestations
@@ -1681,15 +1674,18 @@ def process_attestation(state: BeaconState, attestation: Attestation) -> None:
     assert is_valid_indexed_attestation(state, get_indexed_attestation(state, attestation))
 
     # Update epoch participation flags
-    is_current_epoch = data.target.epoch == get_current_epoch(state)
+    if data.target.epoch == get_current_epoch(state):
+        epoch_participation = state.current_epoch_participation
+    else:
+        epoch_participation = state.previous_epoch_participation
 
     proposer_reward_numerator = 0
     for index in get_attesting_indices(state, attestation):
-        participation = get_epoch_participation_flags(state, is_current_epoch, index)
         for flag_index, weight in enumerate(PARTICIPATION_FLAG_WEIGHTS):
-            if flag_index in participation_flag_indices and not has_flag(participation, flag_index):
-                participation = add_flag(participation, flag_index)
-                set_epoch_participation_flags(state, is_current_epoch, index, participation)
+            if flag_index in participation_flag_indices and not has_flag(
+                epoch_participation[index], flag_index
+            ):
+                epoch_participation[index] = add_flag(epoch_participation[index], flag_index)
                 proposer_reward_numerator += get_base_reward(state, index) * weight
 
     # Reward proposer
@@ -2065,12 +2061,11 @@ def process_consolidation_request(
         return
 
     # Initiate source validator exit and append pending consolidation
-    exit_epoch = compute_consolidation_epoch_and_update_churn(
+    source_validator.exit_epoch = compute_consolidation_epoch_and_update_churn(
         state, source_validator.effective_balance
     )
-    state.validators[source_index].exit_epoch = exit_epoch
-    state.validators[source_index].withdrawable_epoch = (
-        exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY
+    source_validator.withdrawable_epoch = (
+        source_validator.exit_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY
     )
     state.pending_consolidations.append(
         PendingConsolidation(source_index=source_index, target_index=target_index)

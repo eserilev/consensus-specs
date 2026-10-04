@@ -1180,8 +1180,9 @@ def on_payload_attestation_message(
         )
 
     # Update the votes for the block
-    root = data.beacon_block_root
+    payload_timeliness_vote = store.payload_timeliness_vote[data.beacon_block_root]
+    payload_data_availability_vote = store.payload_data_availability_vote[data.beacon_block_root]
     for ptc_index in ptc_indices:
-        store.payload_timeliness_vote[root][ptc_index] = data.payload_present
-        store.payload_data_availability_vote[root][ptc_index] = data.blob_data_available
+        payload_timeliness_vote[ptc_index] = data.payload_present
+        payload_data_availability_vote[ptc_index] = data.blob_data_available
 ```

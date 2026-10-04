@@ -179,24 +179,20 @@ def process_operations(state: BeaconState, body: BeaconBlockBody) -> None:
     # [Modified in Fulu]
     assert len(body.deposits) == 0
 
-    for proposer_slashing in body.proposer_slashings:
-        process_proposer_slashing(state, proposer_slashing)
-    for attester_slashing in body.attester_slashings:
-        process_attester_slashing(state, attester_slashing)
-    for attestation in body.attestations:
-        process_attestation(state, attestation)
+    def for_ops(operations: Sequence[Any], fn: Callable[[BeaconState, Any], None]) -> None:
+        for operation in operations:
+            fn(state, operation)
+
+    for_ops(body.proposer_slashings, process_proposer_slashing)
+    for_ops(body.attester_slashings, process_attester_slashing)
+    for_ops(body.attestations, process_attestation)
     # [Modified in Fulu]
     # Removed `process_deposit`
-    for voluntary_exit in body.voluntary_exits:
-        process_voluntary_exit(state, voluntary_exit)
-    for bls_to_execution_change in body.bls_to_execution_changes:
-        process_bls_to_execution_change(state, bls_to_execution_change)
-    for deposit_request in body.execution_requests.deposits:
-        process_deposit_request(state, deposit_request)
-    for withdrawal_request in body.execution_requests.withdrawals:
-        process_withdrawal_request(state, withdrawal_request)
-    for consolidation_request in body.execution_requests.consolidations:
-        process_consolidation_request(state, consolidation_request)
+    for_ops(body.voluntary_exits, process_voluntary_exit)
+    for_ops(body.bls_to_execution_changes, process_bls_to_execution_change)
+    for_ops(body.execution_requests.deposits, process_deposit_request)
+    for_ops(body.execution_requests.withdrawals, process_withdrawal_request)
+    for_ops(body.execution_requests.consolidations, process_consolidation_request)
 ```
 
 ##### Deposit requests
