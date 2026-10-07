@@ -1,10 +1,11 @@
 from eth_consensus_specs.test.context import (
     default_activation_threshold,
     single_phase,
-    spec_state_test,
+    spec_state_test_with_matching_config,
     spec_test,
     with_custom_state,
     with_heze_and_later,
+    with_matching_spec_config,
 )
 from eth_consensus_specs.test.helpers.block import build_empty_block_for_next_slot
 from eth_consensus_specs.test.helpers.fork_choice import (
@@ -34,7 +35,7 @@ def advance_to_epoch_with_known_dependent_root(spec, state, forkchoice_store):
 
 
 @with_heze_and_later
-@spec_state_test
+@spec_state_test_with_matching_config
 def test_inclusion_list_store_transaction_uniqueness(spec, state):
     def run_func():
         forkchoice_store = get_genesis_forkchoice_store(spec, state)
@@ -141,7 +142,7 @@ def test_inclusion_list_store_transaction_uniqueness(spec, state):
 
 
 @with_heze_and_later
-@spec_state_test
+@spec_state_test_with_matching_config
 def test_inclusion_list_store_by_slot_and_dependent_root__empty_slot(spec, state):
     def run_func():
         forkchoice_store = get_genesis_forkchoice_store(spec, state)
@@ -174,7 +175,7 @@ def test_inclusion_list_store_by_slot_and_dependent_root__empty_slot(spec, state
 
 
 @with_heze_and_later
-@spec_state_test
+@spec_state_test_with_matching_config
 def test_inclusion_list_store_by_slot_and_dependent_root__different_dependent_root(spec, state):
     def run_func():
         forkchoice_store = get_genesis_forkchoice_store(spec, state)
@@ -239,7 +240,7 @@ def test_inclusion_list_store_by_slot_and_dependent_root__different_dependent_ro
 
 
 @with_heze_and_later
-@spec_state_test
+@spec_state_test_with_matching_config
 def test_inclusion_list_store_equivocation(spec, state):
     def run_func():
         forkchoice_store = get_genesis_forkchoice_store(spec, state)
@@ -307,6 +308,7 @@ def test_inclusion_list_store_equivocation(spec, state):
     threshold_fn=default_activation_threshold,
 )
 @single_phase
+@with_matching_spec_config()
 def test_inclusion_list_store_equivocation_scope(spec, state):
     def run_func():
         forkchoice_store = get_genesis_forkchoice_store(spec, state)
@@ -365,7 +367,7 @@ def test_inclusion_list_store_equivocation_scope(spec, state):
 
 
 @with_heze_and_later
-@spec_state_test
+@spec_state_test_with_matching_config
 def test_inclusion_list_store_inclusion_list_due(spec, state):
     def run_func():
         forkchoice_store = get_genesis_forkchoice_store(spec, state)

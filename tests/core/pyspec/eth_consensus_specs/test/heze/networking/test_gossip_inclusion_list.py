@@ -1,6 +1,8 @@
 from eth_consensus_specs.test.context import (
+    spec_configured_state_test,
     spec_state_test_with_matching_config,
     with_heze_and_later,
+    with_phases,
 )
 from eth_consensus_specs.test.gloas.networking.test_gossip_proposer_preferences import (
     setup_store_with_advanced_state,
@@ -9,6 +11,7 @@ from eth_consensus_specs.test.helpers.block import (
     build_empty_block,
     build_empty_block_for_next_slot,
 )
+from eth_consensus_specs.test.helpers.constants import HEZE
 from eth_consensus_specs.test.helpers.gossip import (
     add_pending_block_to_store,
     get_filename,
@@ -49,6 +52,60 @@ def test_gossip_inclusion_list__valid(spec, state):
 
     signed_il = get_sample_signed_inclusion_list(spec, store, state)
     yield get_filename(signed_il), signed_il
+
+    current_time_ms = spec.compute_time_at_slot_ms(store.genesis_time_ms, state.slot)
+    messages = []
+
+    current_time_ms += 100
+    result, reason = run_validate_gossip(
+        spec,
+        seen=seen,
+        store=store,
+        signed_inclusion_list=signed_il,
+        current_time_ms=current_time_ms,
+    )
+    assert result == "valid"
+    assert reason is None
+    messages.append(
+        {
+            "current_time_ms": int(current_time_ms),
+            "message": get_filename(signed_il),
+            "expected": result,
+        }
+    )
+
+    yield "messages", "meta", messages
+
+
+@with_phases([HEZE])
+@spec_configured_state_test({"HEZE_FORK_EPOCH": 2}, activate_at_genesis=True)
+def test_gossip_inclusion_list__valid_at_heze_fork_epoch(spec, state):
+    """
+    An inclusion list for a slot in the Heze fork epoch is valid. Its dependent
+    state is from before the fork.
+    """
+    anchor_state = state.copy()
+    yield "topic", "meta", "inclusion_list"
+
+    fork_epoch = spec.config.HEZE_FORK_EPOCH
+    store, blocks = setup_store_for_inclusion_list(spec, state, target_epoch=fork_epoch)
+
+    yield "state", anchor_state
+    seen = get_seen(spec)
+    for signed in blocks:
+        yield get_filename(signed), signed
+    yield "blocks", "meta", [{"block": get_filename(b)} for b in blocks]
+
+    signed_il = get_sample_signed_inclusion_list(spec, store, state)
+    assert spec.compute_epoch_at_slot(signed_il.message.slot) == fork_epoch
+    yield get_filename(signed_il), signed_il
+
+    # The dependent state is in the last Gloas epoch, so it has the Gloas fork
+    store.block_states[signed_il.message.dependent_root].fork = spec.Fork(
+        previous_version=spec.config.FULU_FORK_VERSION,
+        current_version=spec.config.GLOAS_FORK_VERSION,
+        epoch=spec.config.GLOAS_FORK_EPOCH,
+    )
 
     current_time_ms = spec.compute_time_at_slot_ms(store.genesis_time_ms, state.slot)
     messages = []
